@@ -34,6 +34,13 @@ const AliyunOSS = {
   initWithSigner(AccessKey, Signature, EndPoint) {
     NativeAliyunOSS.initWithSigner(AccessKey, Signature, EndPoint);
   },
+  /*初始化ossclient，
+  **通过sts，此处采用的是服务端签名
+  *
+  */
+  initWithSTS(AccessKeyId, AccessKeySecret, Signature, Expiration, EndPoint) {
+    NativeAliyunOSS.initWithSTS(AccessKeyId, AccessKeySecret, Signature, Expiration, EndPoint);
+  },
   /*异步上传文件
   **bucketName
   *sourceFile:源文件路径，例如:/User/xx/xx/test.jpg

@@ -1,5 +1,12 @@
 package com.dskj.dscj.aliyunoss;
 
+import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Log;
+
 import com.alibaba.sdk.android.oss.ClientConfiguration;
 import com.alibaba.sdk.android.oss.ClientException;
 import com.alibaba.sdk.android.oss.OSS;
@@ -9,24 +16,22 @@ import com.alibaba.sdk.android.oss.callback.OSSCompletedCallback;
 import com.alibaba.sdk.android.oss.callback.OSSProgressCallback;
 import com.alibaba.sdk.android.oss.common.auth.OSSCredentialProvider;
 import com.alibaba.sdk.android.oss.common.auth.OSSCustomSignerCredentialProvider;
+import com.alibaba.sdk.android.oss.common.auth.OSSFederationCredentialProvider;
+import com.alibaba.sdk.android.oss.common.auth.OSSFederationToken;
 import com.alibaba.sdk.android.oss.common.auth.OSSPlainTextAKSKCredentialProvider;
 import com.alibaba.sdk.android.oss.internal.OSSAsyncTask;
-import com.alibaba.sdk.android.oss.model.ObjectMetadata;
 import com.alibaba.sdk.android.oss.model.GetObjectRequest;
 import com.alibaba.sdk.android.oss.model.GetObjectResult;
+import com.alibaba.sdk.android.oss.model.ObjectMetadata;
 import com.alibaba.sdk.android.oss.model.PutObjectRequest;
 import com.alibaba.sdk.android.oss.model.PutObjectResult;
-
-import com.facebook.react.bridge.NativeModule;
+import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
-import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.Promise;
-
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.bridge.Arguments;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import java.io.File;
@@ -34,10 +39,6 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.String;
-
-import android.os.Environment;
-import android.util.Log;
 
 /**
  * Created by lesonli on 2016/10/31.
@@ -104,11 +105,51 @@ public class aliyunossModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void initWithSTS(final String accessKey, final String secretKey, final String signature, final String expirationInGMTFormat, String endPoint) {
+        OSSCredentialProvider credentialProvider = new OSSFederationCredentialProvider() {
+            @Override
+            public OSSFederationToken getFederationToken() {
+                OSSFederationToken token = new OSSFederationToken(accessKey, secretKey, signature, expirationInGMTFormat);
+                return token;
+            }
+        };
+
+        ClientConfiguration conf = new ClientConfiguration();
+        conf.setConnectionTimeout(15 * 1000); // 连接超时，默认15秒
+        conf.setSocketTimeout(15 * 1000); // socket超时，默认15秒
+        conf.setMaxConcurrentRequest(5); // 最大并发请求书，默认5个
+        conf.setMaxErrorRetry(2); // 失败后最大重试次数，默认2次
+
+        oss = new OSSClient(getReactApplicationContext().getApplicationContext(), endPoint, credentialProvider, conf);
+
+        Log.d("AliyunOSS", "OSS initWithSigner ok!");
+    }
+
+    @ReactMethod
     public void uploadObjectAsync(String bucketName, String sourceFile, String ossFile, String updateDate, final Promise promise) {
-// 构造上传请求
+        if (sourceFile.startsWith("content://")) {
+            try {
+                Context context = getReactApplicationContext();
+                String [] proj = {MediaStore.Images.Media.DATA};
+                Cursor cursor = context.getContentResolver().query(Uri.parse(sourceFile), proj,  null, null, null);
+                int column_index = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+                cursor.moveToFirst();
+                String path = cursor.getString(column_index);
+                cursor.close();
+
+                sourceFile = path;
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                promise.reject("UploadFaile", "source path error");
+            }
+            Log.d("path", sourceFile);
+        }
+        // 构造上传请求
         PutObjectRequest put = new PutObjectRequest(bucketName, ossFile, sourceFile);
         ObjectMetadata metadata = new ObjectMetadata();
-        metadata.setHeader("Date",updateDate);
+        if (updateDate != null) {
+            metadata.setHeader("Date", updateDate);
+        }
         put.setMetadata(metadata);
 
         // 异步上传时可以设置进度回调
